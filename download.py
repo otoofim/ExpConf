@@ -32,6 +32,8 @@ CONF_URLS = {
         2022: "/CVPR2022.py?day=all",
         2023: "/CVPR2023.py?day=all",
         2024: "/CVPR2024.py?day=all",
+        2025: "/CVPR2025?day=all",
+        2026: "/CVPR2026?day=all",
     },
     "ICCV": {
         2013: "/ICCV2013.py",
@@ -40,6 +42,7 @@ CONF_URLS = {
         2019: "/ICCV2019.py",
         2021: "/ICCV2021.py?day=all",
         2023: "/ICCV2023.py?day=all",
+        2025: "/ICCV2025?day=all",
     },
     "ECCV": {
         2018: "/ECCV2018.py",
@@ -52,7 +55,8 @@ CONF_URLS = {
         2022: "/WACV2022.py",
         2023: "/WACV2023.py",
         2024: "/WACV2024.py",
-        2025: "/WACV2025.py",
+        2025: "/WACV2025?day=all",
+        2026: "/WACV2026?day=all",
     },
 }
 

@@ -38,10 +38,10 @@ uv run python download.py --conf CVPR --year 2024 --max_papers 100
 Supported conferences and years:
 | Conference | Years |
 |---|---|
-| CVPR | 2013–2024 |
-| ICCV | 2013, 2015, 2017, 2019, 2021, 2023 |
+| CVPR | 2013–2026 |
+| ICCV | 2013, 2015, 2017, 2019, 2021, 2023, 2025 |
 | ECCV | 2018, 2020, 2022 |
-| WACV | 2020–2025 |
+| WACV | 2020–2026 |
 
 ### 4. Generate embeddings
 
