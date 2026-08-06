@@ -169,6 +169,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "requests" },
     { name = "scikit-learn" },
+    { name = "scipy" },
     { name = "tqdm" },
     { name = "umap-learn" },
 ]
@@ -186,6 +187,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "requests", specifier = "==2.32.3" },
     { name = "scikit-learn", specifier = "==1.5.0" },
+    { name = "scipy", specifier = ">=1.17.1" },
     { name = "tqdm", specifier = "==4.66.4" },
     { name = "umap-learn", specifier = "==0.5.6" },
 ]
