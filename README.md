@@ -40,13 +40,13 @@ Supported conferences and years:
 |---|---|---|
 | CVPR | CVF Open Access | 2013–2026 |
 | ICCV | CVF Open Access | 2013, 2015, 2017, 2019, 2021, 2023, 2025 |
-| ECCV | CVF Open Access | 2018, 2020, 2022 |
+| ECCV | CVF (2018–2022) / ECVA (2024+) | 2018, 2020, 2022, 2024 |
 | WACV | CVF Open Access | 2020–2026 |
 | ICML | PMLR | 2019–2025 |
-| NeurIPS | OpenReview | 2021–2024 |
-| ICLR | OpenReview | 2020–2025 |
+| NeurIPS | OpenReview | 2021–2025 |
+| ICLR | OpenReview | 2020–2026 |
 
-> **Note:** NeurIPS and ICLR are fetched from `openreview.net`. If that host is unreachable from your network, download the JSON files on a machine with access and copy them into `data/`.
+> **Note:** NeurIPS, ICLR (`openreview.net`) and ECCV 2024+ (`ecva.net`) may be blocked on restricted networks. Run `download.py` on a machine with unrestricted internet access and copy the JSON files into `data/`.
 
 ### 4. Generate embeddings
 

@@ -1,19 +1,21 @@
 """
 Scrape paper metadata (title, abstract, pdf_link) from multiple sources:
-  - CVF Open Access  → CVPR, ICCV, ECCV, WACV
+  - CVF Open Access  → CVPR, ICCV, ECCV (2018-2022), WACV
+  - ECVA             → ECCV 2024+
   - PMLR             → ICML
   - OpenReview       → NeurIPS, ICLR
 
 Usage:
-    python download.py --conf CVPR  --year 2026
-    python download.py --conf ICML  --year 2024
-    python download.py --conf NeurIPS --year 2024
-    python download.py --conf ICLR  --year 2024 --max_papers 200
+    python download.py --conf CVPR    --year 2026
+    python download.py --conf ICML    --year 2025
+    python download.py --conf NeurIPS --year 2025
+    python download.py --conf ICLR    --year 2026 --max_papers 200
 Output: data/{conf}_{year}_papers.json
 """
 
 import argparse
 import json
+import re
 import time
 from pathlib import Path
 
@@ -28,7 +30,7 @@ HEADERS = {
     )
 }
 
-# ── Conference → source backend ───────────────────────────────────────────────
+# ── Source registries ─────────────────────────────────────────────────────────
 
 # CVF Open Access
 CVF_BASE = "https://openaccess.thecvf.com"
@@ -74,7 +76,15 @@ CVF_PATHS: dict[str, dict[int, str]] = {
     },
 }
 
-# PMLR (Proceedings of Machine Learning Research) — used for ICML
+# ECVA — ECCV 2024+ (no longer mirrored on CVF)
+ECVA_BASE = "https://www.ecva.net"
+ECVA_CONF_YEARS: dict[str, dict[int, str]] = {
+    "ECCV": {
+        2024: "eccv_2024",
+    },
+}
+
+# PMLR — ICML (ICML 2026 volume not yet assigned as of Aug 2026)
 PMLR_BASE = "https://proceedings.mlr.press"
 PMLR_VOLUMES: dict[str, dict[int, str]] = {
     "ICML": {
@@ -88,7 +98,9 @@ PMLR_VOLUMES: dict[str, dict[int, str]] = {
     },
 }
 
-# OpenReview — used for NeurIPS and ICLR
+# OpenReview — NeurIPS and ICLR
+# Pre-2025: Blind_Submission covers all submissions (incl. rejected).
+# 2025+: Poster covers accepted papers only.
 OPENREVIEW_BASE = "https://api.openreview.net"
 OPENREVIEW_INVITATIONS: dict[str, dict[int, str]] = {
     "NeurIPS": {
@@ -96,6 +108,7 @@ OPENREVIEW_INVITATIONS: dict[str, dict[int, str]] = {
         2022: "NeurIPS.cc/2022/Conference/-/Blind_Submission",
         2023: "NeurIPS.cc/2023/Conference/-/Blind_Submission",
         2024: "NeurIPS.cc/2024/Conference/-/Blind_Submission",
+        2025: "NeurIPS.cc/2025/Conference/-/Poster",
     },
     "ICLR": {
         2020: "ICLR.cc/2020/Conference/-/Blind_Submission",
@@ -104,14 +117,18 @@ OPENREVIEW_INVITATIONS: dict[str, dict[int, str]] = {
         2023: "ICLR.cc/2023/Conference/-/Blind_Submission",
         2024: "ICLR.cc/2024/Conference/-/Blind_Submission",
         2025: "ICLR.cc/2025/Conference/-/Blind_Submission",
+        2026: "ICLR.cc/2026/Conference/-/Poster",
     },
 }
 
 ALL_CONFS = (
     list(CVF_PATHS.keys())
+    + ["ECCV"]          # also has ECVA years
     + list(PMLR_VOLUMES.keys())
     + list(OPENREVIEW_INVITATIONS.keys())
 )
+# Deduplicate while preserving order
+ALL_CONFS = list(dict.fromkeys(ALL_CONFS))
 
 
 # ── CVF scraper ───────────────────────────────────────────────────────────────
@@ -149,7 +166,7 @@ def _cvf_paper_details(href: str) -> dict:
 
 
 def scrape_cvf(conf: str, year: int, max_papers: int | None, delay: float) -> list[dict]:
-    print(f"  Fetching paper list from CVF...")
+    print("  Fetching paper list from CVF...")
     links = _cvf_paper_links(conf, year)
     print(f"  Found {len(links)} papers")
     if max_papers:
@@ -170,6 +187,65 @@ def scrape_cvf(conf: str, year: int, max_papers: int | None, delay: float) -> li
     return papers
 
 
+# ── ECVA scraper (ECCV 2024+) ─────────────────────────────────────────────────
+
+def scrape_ecva(conf: str, year: int, max_papers: int | None, delay: float) -> list[dict]:
+    folder = ECVA_CONF_YEARS[conf][year]
+    index_url = f"{ECVA_BASE}/papers.php"
+    print(f"  Fetching paper list from ECVA ({index_url})...")
+    try:
+        soup = BeautifulSoup(
+            requests.get(index_url, headers=HEADERS, timeout=30).text, "html.parser"
+        )
+    except Exception as e:
+        print(f"  Error: {e}")
+        print("  Note: ecva.net may be blocked from this network.")
+        return []
+
+    # Each paper has a title link pointing to its detail page
+    paper_links = []
+    for a in soup.select("a[href]"):
+        href = a["href"]
+        if folder in href and href.endswith(".php"):
+            paper_links.append({
+                "title": a.get_text(strip=True),
+                "href": href if href.startswith("http") else ECVA_BASE + "/" + href.lstrip("/"),
+            })
+    paper_links = list({p["href"]: p for p in paper_links}.values())  # dedup
+    print(f"  Found {len(paper_links)} papers")
+    if max_papers:
+        paper_links = paper_links[:max_papers]
+
+    papers = []
+    for item in tqdm(paper_links, desc="Scraping abstracts"):
+        try:
+            soup = BeautifulSoup(
+                requests.get(item["href"], headers=HEADERS, timeout=30).text, "html.parser"
+            )
+            abstract = ""
+            for tag in soup.find_all(["div", "p"]):
+                text = tag.get_text(strip=True)
+                if len(text) > 100 and tag.get("class") and "abstract" in " ".join(tag.get("class", [])).lower():
+                    abstract = text
+                    break
+
+            pdf_link = ""
+            for a in soup.select("a[href]"):
+                if a["href"].endswith(".pdf"):
+                    pdf_link = a["href"] if a["href"].startswith("http") else ECVA_BASE + a["href"]
+                    break
+
+            papers.append({
+                "title": item["title"],
+                "abstract": abstract,
+                "pdf_link": pdf_link,
+            })
+        except Exception as e:
+            print(f"  Warning: skipping '{item['title']}': {e}")
+        time.sleep(delay)
+    return papers
+
+
 # ── PMLR scraper (ICML) ───────────────────────────────────────────────────────
 
 def _pmlr_paper_links(volume: str) -> list[str]:
@@ -177,26 +253,25 @@ def _pmlr_paper_links(volume: str) -> list[str]:
     soup = BeautifulSoup(
         requests.get(url, headers=HEADERS, timeout=30).text, "html.parser"
     )
-    return [
+    return list(dict.fromkeys([
         a["href"] for a in soup.select("a[href]")
-        if f"/{volume}/" in a["href"] and a["href"].endswith(".html")
+        if f"/{volume}/" in a["href"]
+        and a["href"].endswith(".html")
         and "github.com" not in a["href"]
-    ]
+    ]))
 
 
 def _pmlr_paper_details(url: str) -> dict:
     soup = BeautifulSoup(
         requests.get(url, headers=HEADERS, timeout=30).text, "html.parser"
     )
-    title = soup.find("meta", {"name": "citation_title"})
-    title = title["content"] if title else soup.title.get_text(strip=True)
+    title_meta = soup.find("meta", {"name": "citation_title"})
+    title = title_meta["content"] if title_meta else (soup.title.get_text(strip=True) if soup.title else "")
 
     abstract = ""
     abs_div = soup.find("div", id="abstract")
     if abs_div:
-        # PMLR embeds BibTeX in the abstract div; extract only the abstract= field
         text = abs_div.get_text(separator=" ", strip=True)
-        import re
         m = re.search(r'abstract\s*=\s*\{(.+?)\}\s*(?:}|$)', text, re.DOTALL)
         abstract = m.group(1).strip() if m else text
 
@@ -212,8 +287,6 @@ def scrape_pmlr(conf: str, year: int, max_papers: int | None, delay: float) -> l
     volume = PMLR_VOLUMES[conf][year]
     print(f"  Fetching paper list from PMLR {volume}...")
     urls = _pmlr_paper_links(volume)
-    # Deduplicate (index page may list each paper once but let's be safe)
-    urls = list(dict.fromkeys(urls))
     print(f"  Found {len(urls)} papers")
     if max_papers:
         urls = urls[:max_papers]
@@ -245,15 +318,10 @@ def scrape_openreview(conf: str, year: int, max_papers: int | None, delay: float
     papers = []
     offset = 0
     while True:
-        params = {
-            "invitation": invitation,
-            "limit": OPENREVIEW_PAGE_SIZE,
-            "offset": offset,
-        }
         try:
             resp = requests.get(
                 f"{OPENREVIEW_BASE}/notes",
-                params=params,
+                params={"invitation": invitation, "limit": OPENREVIEW_PAGE_SIZE, "offset": offset},
                 headers=HEADERS,
                 timeout=30,
             )
@@ -262,12 +330,11 @@ def scrape_openreview(conf: str, year: int, max_papers: int | None, delay: float
             print(f"  Error fetching from OpenReview: {e}")
             print(
                 "  Note: openreview.net may be blocked from this network.\n"
-                "  Try running download.py from a different machine or via a proxy."
+                "  Try running download.py from a machine with unrestricted internet access."
             )
             break
 
-        data = resp.json()
-        notes = data.get("notes", [])
+        notes = resp.json().get("notes", [])
         if not notes:
             break
 
@@ -282,11 +349,7 @@ def scrape_openreview(conf: str, year: int, max_papers: int | None, delay: float
                 else pdf_path
             )
             if title:
-                papers.append({
-                    "title": title,
-                    "abstract": abstract,
-                    "pdf_link": pdf_link,
-                })
+                papers.append({"title": title, "abstract": abstract, "pdf_link": pdf_link})
 
         offset += len(notes)
         if max_papers and len(papers) >= max_papers:
@@ -302,24 +365,30 @@ def scrape_openreview(conf: str, year: int, max_papers: int | None, delay: float
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 
-def scrape(conf: str, year: int, max_papers: int | None = None, delay: float = 0.3) -> list[dict]:
-    if conf in CVF_PATHS:
-        return scrape_cvf(conf, year, max_papers, delay)
-    if conf in PMLR_VOLUMES:
-        return scrape_pmlr(conf, year, max_papers, delay)
-    if conf in OPENREVIEW_INVITATIONS:
-        return scrape_openreview(conf, year, max_papers, delay)
-    raise ValueError(f"Unknown conference: {conf}")
-
-
 def valid_years(conf: str) -> list[int]:
+    years = set()
     if conf in CVF_PATHS:
-        return sorted(CVF_PATHS[conf])
+        years |= set(CVF_PATHS[conf])
+    if conf in ECVA_CONF_YEARS:
+        years |= set(ECVA_CONF_YEARS[conf])
     if conf in PMLR_VOLUMES:
-        return sorted(PMLR_VOLUMES[conf])
+        years |= set(PMLR_VOLUMES[conf])
     if conf in OPENREVIEW_INVITATIONS:
-        return sorted(OPENREVIEW_INVITATIONS[conf])
-    return []
+        years |= set(OPENREVIEW_INVITATIONS[conf])
+    return sorted(years)
+
+
+def scrape(conf: str, year: int, max_papers: int | None = None, delay: float = 0.3) -> list[dict]:
+    # CVF takes priority for ECCV years it hosts (2018-2022)
+    if conf in CVF_PATHS and year in CVF_PATHS[conf]:
+        return scrape_cvf(conf, year, max_papers, delay)
+    if conf in ECVA_CONF_YEARS and year in ECVA_CONF_YEARS[conf]:
+        return scrape_ecva(conf, year, max_papers, delay)
+    if conf in PMLR_VOLUMES and year in PMLR_VOLUMES[conf]:
+        return scrape_pmlr(conf, year, max_papers, delay)
+    if conf in OPENREVIEW_INVITATIONS and year in OPENREVIEW_INVITATIONS[conf]:
+        return scrape_openreview(conf, year, max_papers, delay)
+    raise ValueError(f"No source configured for {conf} {year}")
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
