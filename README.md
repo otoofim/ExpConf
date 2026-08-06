@@ -36,12 +36,17 @@ uv run python download.py --conf CVPR --year 2024 --max_papers 100
 ```
 
 Supported conferences and years:
-| Conference | Years |
-|---|---|
-| CVPR | 2013–2026 |
-| ICCV | 2013, 2015, 2017, 2019, 2021, 2023, 2025 |
-| ECCV | 2018, 2020, 2022 |
-| WACV | 2020–2026 |
+| Conference | Source | Years |
+|---|---|---|
+| CVPR | CVF Open Access | 2013–2026 |
+| ICCV | CVF Open Access | 2013, 2015, 2017, 2019, 2021, 2023, 2025 |
+| ECCV | CVF Open Access | 2018, 2020, 2022 |
+| WACV | CVF Open Access | 2020–2026 |
+| ICML | PMLR | 2019–2025 |
+| NeurIPS | OpenReview | 2021–2024 |
+| ICLR | OpenReview | 2020–2025 |
+
+> **Note:** NeurIPS and ICLR are fetched from `openreview.net`. If that host is unreachable from your network, download the JSON files on a machine with access and copy them into `data/`.
 
 ### 4. Generate embeddings
 
